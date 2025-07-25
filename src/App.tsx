@@ -9,7 +9,7 @@ import { CssBaseline, ThemeProvider, createTheme } from "@mui/material";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { Auth } from "./components/Auth";
-import { Dashboard } from "./components/Dashboard";
+import { MainApp } from "./components/MainApp";
 
 const theme = createTheme({
   palette: {
@@ -35,12 +35,12 @@ const AppRoutes: React.FC = () => {
         element={user ? <Navigate to="/dashboard" replace /> : <Auth />}
       />
 
-      {/* Protected route - dashboard */}
+      {/* Protected route - main application */}
       <Route
         path="/dashboard"
         element={
           <ProtectedRoute>
-            <Dashboard />
+            <MainApp />
           </ProtectedRoute>
         }
       />

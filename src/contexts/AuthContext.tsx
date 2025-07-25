@@ -5,6 +5,7 @@ import React, {
   useEffect,
   ReactNode,
 } from "react";
+import { authAPI } from "../services/api";
 
 // Types
 export interface User {
@@ -12,6 +13,7 @@ export interface User {
   email: string;
   name: string;
   role?: string;
+  profile_image_url?: string;
 }
 
 export interface AuthContextType {
@@ -48,26 +50,32 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Check if user is already logged in on app start
   useEffect(() => {
-    const checkAuthStatus = () => {
+    const checkAuthStatus = async () => {
       try {
         const token = localStorage.getItem("authToken");
-        const userData = localStorage.getItem("userData");
 
-        if (token && userData) {
-          const parsedUser = JSON.parse(userData);
-          // In a real app, you'd validate the token with your backend
-          if (isValidToken(token)) {
-            setUser(parsedUser);
-          } else {
-            // Token expired or invalid
+        if (token) {
+          try {
+            // Verify token with backend
+            const response = await authAPI.verifyToken();
+            if (response.valid && response.user) {
+              setUser(response.user);
+            } else {
+              // Token invalid, clear storage
+              localStorage.removeItem("authToken");
+              localStorage.removeItem("user");
+            }
+          } catch (error) {
+            // Token verification failed
+            console.error("Token verification failed:", error);
             localStorage.removeItem("authToken");
-            localStorage.removeItem("userData");
+            localStorage.removeItem("user");
           }
         }
       } catch (error) {
         console.error("Error checking auth status:", error);
         localStorage.removeItem("authToken");
-        localStorage.removeItem("userData");
+        localStorage.removeItem("user");
       } finally {
         setIsLoading(false);
       }
@@ -76,77 +84,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     checkAuthStatus();
   }, []);
 
-  // Simple token validation (in real app, verify with backend)
-  const isValidToken = (token: string): boolean => {
-    try {
-      const payload = JSON.parse(atob(token.split(".")[1]));
-      return payload.exp > Date.now() / 1000;
-    } catch {
-      return false;
-    }
-  };
-
-  // Generate a simple JWT-like token (for demo purposes)
-  const generateToken = (user: User): string => {
-    const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-    const payload = btoa(
-      JSON.stringify({
-        id: user.id,
-        email: user.email,
-        exp: Math.floor(Date.now() / 1000) + 24 * 60 * 60, // 24 hours
-      })
-    );
-    const signature = btoa("demo-signature"); // In real app, use proper signing
-    return `${header}.${payload}.${signature}`;
-  };
-
   // Login function
   const login = async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true);
     setError(null);
 
     try {
-      // Simulate API call delay
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const response = await authAPI.login(email, password);
 
-      // Get stored users from localStorage (demo purposes)
-      const storedUsers = JSON.parse(
-        localStorage.getItem("registeredUsers") || "[]"
-      );
+      if (response.user && response.token) {
+        // Store token and user data
+        localStorage.setItem("authToken", response.token);
+        localStorage.setItem("user", JSON.stringify(response.user));
 
-      // Find user by email
-      const foundUser = storedUsers.find((u: any) => u.email === email);
-
-      if (!foundUser) {
-        setError("User not found");
+        setUser(response.user);
+        return true;
+      } else {
+        setError("Login failed. Invalid response from server.");
         return false;
       }
-
-      // In a real app, you'd hash the password and compare with bcrypt
-      if (foundUser.password !== password) {
-        setError("Invalid password");
-        return false;
-      }
-
-      // Create user object without password
-      const userWithoutPassword: User = {
-        id: foundUser.id,
-        email: foundUser.email,
-        name: foundUser.name,
-        role: foundUser.role,
-      };
-
-      // Generate token
-      const token = generateToken(userWithoutPassword);
-
-      // Store in localStorage
-      localStorage.setItem("authToken", token);
-      localStorage.setItem("userData", JSON.stringify(userWithoutPassword));
-
-      setUser(userWithoutPassword);
-      return true;
-    } catch (error) {
-      setError("Login failed. Please try again.");
+    } catch (error: any) {
+      const errorMessage =
+        error.response?.data?.error || "Login failed. Please try again.";
+      setError(errorMessage);
       return false;
     } finally {
       setIsLoading(false);
@@ -163,49 +123,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setError(null);
 
     try {
-      // Simulate API call delay
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const response = await authAPI.register(email, name, password);
 
-      // Get existing users
-      const storedUsers = JSON.parse(
-        localStorage.getItem("registeredUsers") || "[]"
-      );
+      if (response.user && response.token) {
+        // Store token and user data
+        localStorage.setItem("authToken", response.token);
+        localStorage.setItem("user", JSON.stringify(response.user));
 
-      // Check if user already exists
-      if (storedUsers.some((u: any) => u.email === email)) {
-        setError("User with this email already exists");
+        setUser(response.user);
+        return true;
+      } else {
+        setError("Registration failed. Invalid response from server.");
         return false;
       }
-
-      // Create new user
-      const newUser = {
-        id: Date.now().toString(),
-        name,
-        email,
-        password, // In real app, hash this with bcrypt
-        role: "user",
-      };
-
-      // Save to localStorage (in real app, save to database)
-      storedUsers.push(newUser);
-      localStorage.setItem("registeredUsers", JSON.stringify(storedUsers));
-
-      // Auto-login after registration
-      const userWithoutPassword: User = {
-        id: newUser.id,
-        email: newUser.email,
-        name: newUser.name,
-        role: newUser.role,
-      };
-
-      const token = generateToken(userWithoutPassword);
-      localStorage.setItem("authToken", token);
-      localStorage.setItem("userData", JSON.stringify(userWithoutPassword));
-
-      setUser(userWithoutPassword);
-      return true;
-    } catch (error) {
-      setError("Registration failed. Please try again.");
+    } catch (error: any) {
+      const errorMessage =
+        error.response?.data?.error || "Registration failed. Please try again.";
+      setError(errorMessage);
       return false;
     } finally {
       setIsLoading(false);
@@ -213,11 +147,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   // Logout function
-  const logout = () => {
-    localStorage.removeItem("authToken");
-    localStorage.removeItem("userData");
-    setUser(null);
-    setError(null);
+  const logout = async () => {
+    try {
+      // Call backend logout endpoint
+      await authAPI.logout();
+    } catch (error) {
+      console.error("Logout error:", error);
+      // Continue with local logout even if backend call fails
+    } finally {
+      // Clear local storage and state
+      localStorage.removeItem("authToken");
+      localStorage.removeItem("user");
+      setUser(null);
+      setError(null);
+    }
   };
 
   const value: AuthContextType = {
